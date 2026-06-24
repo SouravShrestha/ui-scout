@@ -1,5 +1,5 @@
 import { parseHTML } from 'linkedom';
-import { extractColors, buildPalette, normalizeColor } from './colors';
+import { extractColors, buildPalette, normalizeColor, extractTailwindBgColor, extractTailwindColors } from './colors';
 import type { LayoutNode, LayoutRole, ColorEntry } from './types';
 
 const LAYOUT_TAGS = new Set([
@@ -66,7 +66,7 @@ function buildNode(el: Element, depth: number): LayoutNode | null {
   const styleAttr = el.getAttribute('style') || '';
   const role = classifyRole(tag, id || '', cls);
 
-  const bgColor = extractBgColor(styleAttr);
+  const bgColor = extractBgColor(styleAttr) ?? extractTailwindBgColor(cls);
   const textColor = extractTextColor(styleAttr);
 
   const children: LayoutNode[] = [];
@@ -98,8 +98,11 @@ function buildNode(el: Element, depth: number): LayoutNode | null {
   };
 }
 
-export function parseFromLayout(html: string): { tree: LayoutNode; palette: ColorEntry[] } {
-  const rawColors = extractColors(html);
+export function parseFromLayout(html: string, extraCss = ''): { tree: LayoutNode; palette: ColorEntry[] } {
+  const rawColors = [
+    ...extractColors(html + (extraCss ? '\n' + extraCss : '')),
+    ...extractTailwindColors(html),
+  ];
   const palette = buildPalette(rawColors);
 
   let rootChildren: LayoutNode[] = [];

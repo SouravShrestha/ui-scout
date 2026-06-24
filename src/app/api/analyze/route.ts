@@ -6,6 +6,37 @@ export const runtime = 'edge';
 const PRIVATE_IP =
   /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.0\.0\.0|\[::1\]|::1$)/i;
 
+async function fetchExternalCss(html: string, baseUrl: string): Promise<string> {
+  const linkRegex =
+    /<link[^>]+rel=["']?stylesheet["']?[^>]+href=["']([^"'>]+)["']|<link[^>]+href=["']([^"'>]+)["'][^>]+rel=["']?stylesheet["']?/gi;
+  const hrefs: string[] = [];
+  let m: RegExpExecArray | null;
+
+  while ((m = linkRegex.exec(html)) !== null && hrefs.length < 5) {
+    const href = (m[1] || m[2])?.trim();
+    if (!href) continue;
+    try {
+      const absolute = new URL(href, baseUrl).href;
+      if (!PRIVATE_IP.test(new URL(absolute).hostname)) hrefs.push(absolute);
+    } catch { /* malformed href */ }
+  }
+
+  const results = await Promise.allSettled(
+    hrefs.map(async (url) => {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(3000),
+        headers: { Accept: 'text/css,*/*;q=0.1' },
+      });
+      if (!res.ok) return '';
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength > 500_000) return '';
+      return new TextDecoder().decode(buf);
+    }),
+  );
+
+  return results.map((r) => (r.status === 'fulfilled' ? r.value : '')).join('\n');
+}
+
 function errorJson(code: AnalyzeError['code'], message: string, status: number): Response {
   return Response.json({ error: message, code } satisfies AnalyzeError, { status });
 }
@@ -77,7 +108,8 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
-    const { tree, palette } = parseFromLayout(html);
+    const extraCss = await fetchExternalCss(html, targetUrl.href).catch(() => '');
+    const { tree, palette } = parseFromLayout(html, extraCss);
     const body: AnalyzeResponse = {
       url: targetUrl.href,
       tree,
