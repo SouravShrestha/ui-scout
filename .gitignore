@@ -1,1 +1,4 @@
-node_modules/\n.next/\n.vercel/\n*.local
+node_modules/
+.next/
+.vercel/
+*.local
